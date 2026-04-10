@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KNNSim — K-Nearest Neighbors Explorer</title>
+<style>
+  :root {
+    --bg: #f0f4f8;
+    --card: #fff;
+    --primary: #6366f1;
+    --primary-light: #eef2ff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --class0: #3b82f6;
+    --class1: #ef4444;
+    --amber: #f59e0b;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  #header {
+    height: 60px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  #header h1 {
+    color: #fff;
+    font-size: 1.15rem;
+    font-weight: 700;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #header h1 span {
+    font-weight: 300;
+    opacity: 0.85;
+    font-size: 0.95rem;
+  }
+  .version-badge {
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    font-size: 0.72rem;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+  }
+  #langBtn {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: #fff;
+    padding: 5px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: background 0.2s;
+    white-space: nowrap;
+  }
+  #langBtn:hover { background: rgba(255,255,255,0.32); }
+
+  /* BODY LAYOUT */
+  #body {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  html[dir="rtl"] #sidebar { border-right: none; border-left: 1px solid var(--border); }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .card-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  /* UPLOAD ZONE */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 18px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .upload-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-emoji { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+  .upload-text { font-size: 0.8rem; color: var(--muted); }
+  .upload-hint { font-size: 0.7rem; color: var(--muted); opacity: 0.75; margin-top: 3px; }
+  #fileInfo {
+    font-size: 0.76rem;
+    color: var(--primary);
+    margin-top: 8px;
+    font-weight: 600;
+    min-height: 1.2em;
+  }
+
+  /* FORM CONTROLS */
+  .form-row {
+    margin-bottom: 9px;
+  }
+  .form-row:last-child { margin-bottom: 0; }
+  .form-label {
+    font-size: 0.74rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+    display: block;
+    font-weight: 500;
+  }
+  select, input[type="range"] {
+    width: 100%;
+  }
+  select {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: var(--card);
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+  select:focus { border-color: var(--primary); }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .checkbox-row input[type="checkbox"] { cursor: pointer; accent-color: var(--primary); }
+  .checkbox-row label { font-size: 0.78rem; color: var(--text); cursor: pointer; }
+
+  input[type="range"] {
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+  .k-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .k-val {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1;
+  }
+  .k-label { font-size: 0.74rem; color: var(--muted); }
+
+  .btn {
+    width: 100%;
+    padding: 9px 14px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    margin-bottom: 7px;
+  }
+  .btn:last-child { margin-bottom: 0; }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) { background: #4f46e5; }
+  .btn-outline {
+    background: transparent;
+    color: var(--primary);
+    border: 1.5px solid var(--primary);
+  }
+  .btn-outline:hover:not(:disabled) { background: var(--primary-light); }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* LEGEND */
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .legend-item:last-child { margin-bottom: 0; }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-line {
+    width: 18px; height: 3px;
+    flex-shrink: 0;
+    border-radius: 2px;
+  }
+
+  /* Hidden cards */
+  .hidden { display: none !important; }
+
+  /* MAIN AREA */
+  #main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* CANVAS WRAP */
+  #canvasWrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background: #f8fafc;
+  }
+  #scatterCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #canvasPlaceholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    gap: 8px;
+    pointer-events: none;
+  }
+  #canvasPlaceholder .ph-emoji { font-size: 2.5rem; opacity: 0.35; }
+  #canvasPlaceholder .ph-text { font-size: 0.88rem; opacity: 0.55; }
+
+  /* PREDICTION PANEL */
+  #predPanel {
+    height: 210px;
+    border-top: 1px solid var(--border);
+    background: var(--card);
+    display: flex;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  /* Empty state */
+  #predEmpty {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    gap: 8px;
+  }
+  #predEmpty .ph-icon { font-size: 1.3rem; opacity: 0.45; }
+
+  /* Votes section */
+  #votesSection {
+    width: 220px;
+    border-right: 1px solid var(--border);
+    padding: 12px 14px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  html[dir="rtl"] #votesSection { border-right: none; border-left: 1px solid var(--border); }
+  .votes-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .vote-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .vote-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+  }
+  .vote-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .vote-label { flex: 1; font-weight: 500; }
+  .vote-count { font-weight: 700; font-size: 0.85rem; min-width: 20px; text-align: right; }
+  .vote-bar-bg {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .vote-bar {
+    height: 100%;
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  .vote-bar.c0 { background: var(--class0); }
+  .vote-bar.c1 { background: var(--class1); }
+
+  #winnerBadge {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-align: center;
+    margin-top: 2px;
+  }
+  #winnerBadge.c0 { background: #dbeafe; color: #1d4ed8; }
+  #winnerBadge.c1 { background: #fee2e2; color: #b91c1c; }
+
+  #stepInfo {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: auto;
+    padding-top: 4px;
+  }
+
+  /* Distances section */
+  #distSection {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    padding: 12px 14px 8px;
+  }
+  .dist-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
+  #distTableWrap {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+  }
+  #distTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+  }
+  #distTable thead th {
+    position: sticky;
+    top: 0;
+    background: var(--card);
+    color: var(--muted);
+    font-weight: 600;
+    text-align: left;
+    padding: 3px 8px 5px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    z-index: 1;
+  }
+  html[dir="rtl"] #distTable thead th { text-align: right; }
+  #distTable tbody tr { border-bottom: 1px solid #f1f5f9; }
+  #distTable tbody tr:last-child { border-bottom: none; }
+  #distTable tbody td {
+    padding: 4px 8px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  #distTable tbody tr.revealed-c0 { background: #eff6ff; }
+  #distTable tbody tr.revealed-c1 { background: #fef2f2; }
+  #distTable tbody tr.current-row { font-weight: 700; }
+  .status-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .status-neighbor { background: #fef3c7; color: #92400e; }
+  .status-current  { background: #fde68a; color: #78350f; }
+  .status-pending  { background: #f1f5f9; color: var(--muted); }
+
+  /* STATUS BAR */
+  #statusBar {
+    height: 24px;
+    background: #f8fafc;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  #statusText {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  /* Scrollbar styling */
+  #sidebar::-webkit-scrollbar,
+  #distTableWrap::-webkit-scrollbar { width: 5px; }
+  #sidebar::-webkit-scrollbar-track,
+  #distTableWrap::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb,
+  #distTableWrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+  /* RTL tweaks */
+  html[dir="rtl"] #body { grid-template-columns: 1fr 280px; }
+  html[dir="rtl"] #sidebar { order: 2; }
+  html[dir="rtl"] #main { order: 1; }
+  html[dir="rtl"] #votesSection { order: 2; border-right: none; border-left: 1px solid var(--border); }
+  html[dir="rtl"] #distSection { order: 1; }
+  html[dir="rtl"] .vote-count { text-align: left; }
+
+  /* Separator in sidebar */
+  .axis-section {
+    margin-bottom: 6px;
+  }
+  .axis-section:last-child { margin-bottom: 0; }
+  .axis-header {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 5px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <h1 id="appTitle">KNNSim <span id="appSubtitle">— K-Nearest Neighbors Explorer</span></h1>
+  <div class="version-badge">v1.0 · 2026-04-10</div>
+  <button id="langBtn" onclick="toggleLang()">עב</button>
+</div>
+
+<!-- BODY -->
+<div id="body">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+
+    <!-- DATA CARD -->
+    <div class="card" id="dataCard">
+      <div class="card-title" data-t="cardData">Data</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="csvInput" accept=".csv">
+        <span class="upload-emoji">📂</span>
+        <div class="upload-text" data-t="clickToUpload">Click to upload a CSV file</div>
+        <div class="upload-hint" data-t="pimaHint">Pima Indians format supported</div>
+      </div>
+      <div id="fileInfo"></div>
+    </div>
+
+    <!-- FEATURES CARD -->
+    <div class="card hidden" id="featuresCard">
+      <div class="card-title" data-t="cardFeatures">Features</div>
+      <div class="form-row">
+        <label class="form-label" data-t="featureX">Feature X (horizontal)</label>
+        <select id="selX" onchange="onFeatureChange()"></select>
+      </div>
+      <div class="form-row">
+        <label class="form-label" data-t="featureY">Feature Y (vertical)</label>
+        <select id="selY" onchange="onFeatureChange()"></select>
+      </div>
+    </div>
+
+    <!-- PREPROCESSING CARD -->
+    <div class="card hidden" id="prepCard">
+      <div class="card-title" data-t="cardPrep">Preprocessing</div>
+      <div class="axis-section">
+        <div class="axis-header" data-t="axisX">X axis</div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="replaceZeroX" onchange="onPrepChange()">
+          <label for="replaceZeroX" data-t="replaceZero">Replace 0 → mean</label>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-t="scaler">Scaler</label>
+          <select id="scalerX" onchange="onPrepChange()">
+            <option value="none" data-t="scalerNone">None</option>
+            <option value="standard" data-t="scalerStd">Standard (z-score)</option>
+            <option value="minmax" data-t="scalerMM">Min-Max</option>
+            <option value="robust" data-t="scalerRob">Robust</option>
+          </select>
+        </div>
+      </div>
+      <div class="axis-section">
+        <div class="axis-header" data-t="axisY">Y axis</div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="replaceZeroY" onchange="onPrepChange()">
+          <label for="replaceZeroY" data-t="replaceZero">Replace 0 → mean</label>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-t="scaler">Scaler</label>
+          <select id="scalerY" onchange="onPrepChange()">
+            <option value="none" data-t="scalerNone">None</option>
+            <option value="standard" data-t="scalerStd">Standard (z-score)</option>
+            <option value="minmax" data-t="scalerMM">Min-Max</option>
+            <option value="robust" data-t="scalerRob">Robust</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODEL CARD -->
+    <div class="card hidden" id="modelCard">
+      <div class="card-title" data-t="cardModel">Model</div>
+      <div class="k-display">
+        <div>
+          <div class="k-label" data-t="kNeighbors">K (neighbors)</div>
+          <div class="k-val" id="kValDisplay">5</div>
+        </div>
+      </div>
+      <input type="range" id="kSlider" min="1" max="15" step="2" value="5" oninput="onKChange()">
+      <div style="height:10px;"></div>
+      <button class="btn btn-primary" id="btnRebuild" disabled onclick="rebuildModel()" data-t="rebuildBtn">Rebuild Model</button>
+      <button class="btn btn-outline" id="btnPredict" disabled onclick="nextPrediction()" data-t="predictBtn">Next Prediction</button>
+    </div>
+
+    <!-- LEGEND CARD -->
+    <div class="card hidden" id="legendCard">
+      <div class="card-title" data-t="cardLegend">Legend</div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#3b82f6;"></div>
+        <span data-t="class0label">Class 0 — No Diabetes</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ef4444;"></div>
+        <span data-t="class1label">Class 1 — Diabetes</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f59e0b; border: 2px solid #d97706;"></div>
+        <span data-t="testPointLabel">Test point (validation)</span>
+      </div>
+      <div class="legend-item" style="margin-top:4px;">
+        <div class="legend-line" style="background:#cbd5e1;"></div>
+        <span data-t="distLineLabel">Distance line</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background:#f59e0b;"></div>
+        <span data-t="kLineLabel">K-neighbor line</span>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- CANVAS WRAP -->
+    <div id="canvasWrap">
+      <canvas id="scatterCanvas"></canvas>
+      <div id="canvasPlaceholder">
+        <div class="ph-emoji">🔵</div>
+        <div class="ph-text" data-t="phText">Upload a CSV to begin</div>
+      </div>
+    </div>
+
+    <!-- PREDICTION PANEL -->
+    <div id="predPanel">
+      <div id="predEmpty">
+        <span class="ph-icon">💡</span>
+        <span data-t="predEmptyMsg">Build a model then click "Next Prediction" to start</span>
+      </div>
+      <div id="votesSection" class="hidden">
+        <div class="votes-title" data-t="votesTitle">Votes</div>
+        <div class="vote-row">
+          <div class="vote-header">
+            <div class="vote-dot" style="background:var(--class0);"></div>
+            <div class="vote-label" data-t="nodiabetes">No Diabetes</div>
+            <div class="vote-count" id="voteCount0">0</div>
+          </div>
+          <div class="vote-bar-bg"><div class="vote-bar c0" id="voteBar0"></div></div>
+        </div>
+        <div class="vote-row">
+          <div class="vote-header">
+            <div class="vote-dot" style="background:var(--class1);"></div>
+            <div class="vote-label" data-t="diabetes">Diabetes</div>
+            <div class="vote-count" id="voteCount1">0</div>
+          </div>
+          <div class="vote-bar-bg"><div class="vote-bar c1" id="voteBar1"></div></div>
+        </div>
+        <div id="winnerBadge" class="hidden"></div>
+        <div id="stepInfo" data-t="stepInfo">Step — of —</div>
+      </div>
+      <div id="distSection" class="hidden">
+        <div class="dist-title" data-t="distTitle">Distances — sorted nearest first</div>
+        <div id="distTableWrap">
+          <table id="distTable">
+            <thead>
+              <tr>
+                <th data-t="colRank">#</th>
+                <th data-t="colDist">Distance</th>
+                <th data-t="colClass">Class</th>
+                <th data-t="colStatus">Status</th>
+              </tr>
+            </thead>
+            <tbody id="distTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div id="statusBar">
+      <div class="status-dot" id="statusDot"></div>
+      <div id="statusText" data-t="statusNoData">No data loaded</div>
+    </div>
+
+  </div><!-- /main -->
+
+</div><!-- /body -->
+
+<script>
+// ─── TRANSLATIONS ───────────────────────────────────────────────────────────
+const T = {
+  en: {
+    appTitle:       'KNNSim',
+    appSubtitle:    '— K-Nearest Neighbors Explorer',
+    cardData:       'Data',
+    cardFeatures:   'Features',
+    cardPrep:       'Preprocessing',
+    cardModel:      'Model',
+    cardLegend:     'Legend',
+    featureX:       'Feature X (horizontal)',
+    featureY:       'Feature Y (vertical)',
+    axisX:          'X axis',
+    axisY:          'Y axis',
+    replaceZero:    'Replace 0 → mean',
+    scaler:         'Scaler',
+    scalerNone:     'None',
+    scalerStd:      'Standard (z-score)',
+    scalerMM:       'Min-Max',
+    scalerRob:      'Robust',
+    kNeighbors:     'K (neighbors)',
+    rebuildBtn:     'Rebuild Model',
+    predictBtn:     'Next Prediction',
+    class0label:    'Class 0 — No Diabetes',
+    class1label:    'Class 1 — Diabetes',
+    testPointLabel: 'Test point (validation)',
+    distLineLabel:  'Distance line',
+    kLineLabel:     'K-neighbor line',
+    clickToUpload:  'Click to upload a CSV file',
+    pimaHint:       'Pima Indians format supported',
+    phText:         'Upload a CSV to begin',
+    predEmptyMsg:   'Build a model then click "Next Prediction" to start',
+    votesTitle:     'Votes',
+    nodiabetes:     'No Diabetes',
+    diabetes:       'Diabetes',
+    distTitle:      'Distances — sorted nearest first',
+    colRank:        '#',
+    colDist:        'Distance',
+    colClass:       'Class',
+    colStatus:      'Status',
+    stepInfo:       (s, k) => `Step ${s} of ${k}`,
+    statusNoData:   'No data loaded',
+    statusLoaded:   (n, f) => `${n} points loaded · ${f} features`,
+    statusBuilding: 'Rebuilding model…',
+    statusReady:    (tr, va) => `Model ready · ${tr} train · ${va} val`,
+    statusPredicting: (s, k) => `Predicting… step ${s} of ${k}`,
+    statusDone:     (w) => `Prediction complete — Class ${w} wins`,
+    winnerText:     (w) => `✓ Class ${w} wins`,
+    neighbor:       'Neighbor',
+    current:        'Current',
+    pending:        '—',
+    dirtyHint:      '● Rebuild required',
+  },
+  he: {
+    appTitle:       'KNNSim',
+    appSubtitle:    '— סייר K-שכנים קרובים',
+    cardData:       'נתונים',
+    cardFeatures:   'תכונות',
+    cardPrep:       'עיבוד מקדים',
+    cardModel:      'מודל',
+    cardLegend:     'מקרא',
+    featureX:       'תכונה X (אופקי)',
+    featureY:       'תכונה Y (אנכי)',
+    axisX:          'ציר X',
+    axisY:          'ציר Y',
+    replaceZero:    'החלף 0 → ממוצע',
+    scaler:         'נרמול',
+    scalerNone:     'ללא',
+    scalerStd:      'סטנדרטי (z-score)',
+    scalerMM:       'Min-Max',
+    scalerRob:      'Robust',
+    kNeighbors:     'K (שכנים)',
+    rebuildBtn:     'בנה מודל מחדש',
+    predictBtn:     'חיזוי הבא',
+    class0label:    'קבוצה 0 — ללא סוכרת',
+    class1label:    'קבוצה 1 — סוכרת',
+    testPointLabel: 'נקודת בדיקה (אימות)',
+    distLineLabel:  'קו מרחק',
+    kLineLabel:     'קו שכן K',
+    clickToUpload:  'לחץ להעלאת קובץ',
+    pimaHint:       'פורמט נתוני פימה',
+    phText:         'העלה CSV כדי להתחיל',
+    predEmptyMsg:   'בנה מודל ולחץ "חיזוי הבא" להתחלה',
+    votesTitle:     'הצבעות',
+    nodiabetes:     'ללא סוכרת',
+    diabetes:       'סוכרת',
+    distTitle:      'מרחקים — ממויין מהקרוב לרחוק',
+    colRank:        '#',
+    colDist:        'מרחק',
+    colClass:       'קבוצה',
+    colStatus:      'סטטוס',
+    stepInfo:       (s, k) => `שלב ${s} מתוך ${k}`,
+    statusNoData:   'לא נטענו נתונים',
+    statusLoaded:   (n, f) => `${n} נקודות · ${f} תכונות`,
+    statusBuilding: 'בונה מודל…',
+    statusReady:    (tr, va) => `מודל מוכן · ${tr} אימון · ${va} אימות`,
+    statusPredicting: (s, k) => `מחשב… שלב ${s} מתוך ${k}`,
+    statusDone:     (w) => `חיזוי הושלם — קבוצה ${w} מנצחת`,
+    winnerText:     (w) => `✓ קבוצה ${w} מנצחת`,
+    neighbor:       'שכן',
+    current:        'נוכחי',
+    pending:        '—',
+    dirtyHint:      '● נדרש בנייה מחדש',
+  }
+};
+
+let lang = 'en';
+
+function tx(key, ...args) {
+  const v = T[lang][key];
+  if (typeof v === 'function') return v(...args);
+  return v || T['en'][key] || key;
+}
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.documentElement.dir = (lang === 'he') ? 'rtl' : 'ltr';
+  document.getElementById('langBtn').textContent = (lang === 'en') ? 'עב' : 'EN';
+
+  // Title
+  document.getElementById('appTitle').childNodes[0].textContent = tx('appTitle') + ' ';
+  document.getElementById('appSubtitle').textContent = tx('appSubtitle');
+
+  // All elements with data-t
+  document.querySelectorAll('[data-t]').forEach(el => {
+    const key = el.getAttribute('data-t');
+    const val = T[lang][key];
+    if (typeof val === 'string') el.textContent = val;
+  });
+
+  // Selects with data-t options
+  document.querySelectorAll('select').forEach(sel => {
+    sel.querySelectorAll('option[data-t]').forEach(opt => {
+      const key = opt.getAttribute('data-t');
+      if (T[lang][key]) opt.textContent = T[lang][key];
+    });
+  });
+
+  // Refresh dynamic text
+  refreshStatusBar();
+  if (state.pred && state.pred.step >= 0) {
+    updateStepInfo(state.pred.step);
+  }
+}
+
+function toggleLang() {
+  lang = (lang === 'en') ? 'he' : 'en';
+  applyLang();
+}
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+const state = {
+  rawData:    null,   // array of row objects
+  headers:    [],
+  features:   [],
+  outcomeCol: null,
+  fileName:   '',
+  // built model
+  trainPts:   [],    // {x, y, cls, cx, cy} scaled + canvas coords
+  valPts:     [],
+  xParams:    null,
+  yParams:    null,
+  xMin: 0, xMax: 1, yMin: 0, yMax: 1,
+  modelReady: false,
+  dirty:      false,
+  // prediction
+  pred:       null,  // active prediction object
+  predTimer:  null,
+  // animation
+  animFrom:   null,
+  animTo:     null,
+  animStart:  null,
+  animDur:    5000,
+  animRaf:    null,
+};
+
+// ─── CANVAS SETUP ───────────────────────────────────────────────────────────
+let canvas, ctx;
+const PAD_L = 55, PAD_R = 20, PAD_T = 20, PAD_B = 45;
+
+window.addEventListener('DOMContentLoaded', () => {
+  canvas = document.getElementById('scatterCanvas');
+  ctx = canvas.getContext('2d');
+
+  const wrap = document.getElementById('canvasWrap');
+  const ro = new ResizeObserver(() => { resizeCanvas(); drawScene(); });
+  ro.observe(wrap);
+
+  // Upload zone drag/drop
+  const zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  document.getElementById('csvInput').addEventListener('change', e => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  drawScene();
+  setStatus('noData');
+});
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvasWrap');
+  canvas.width  = wrap.offsetWidth;
+  canvas.height = wrap.offsetHeight;
+}
+
+// ─── CSV LOADING ─────────────────────────────────────────────────────────────
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => parseCSV(e.target.result, file.name);
+  reader.readAsText(file);
+}
+
+function parseCSV(text, fileName) {
+  const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return;
+
+  const headers = lines[0].split(',').map(h => h.trim());
+  const outcomeRegex = /^(outcome|class|target|label|diabetes)$/i;
+  let outcomeCol = null;
+  headers.forEach((h, i) => { if (outcomeRegex.test(h)) outcomeCol = i; });
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(',');
+    const row = {};
+    let valid = true;
+    headers.forEach((h, j) => {
+      const v = parseFloat(parts[j]);
+      if (isNaN(v)) valid = false;
+      row[h] = v;
+    });
+    if (valid) rows.push(row);
+  }
+
+  if (rows.length < 5) return;
+
+  const features = headers.filter((_, i) => i !== outcomeCol);
+
+  state.rawData   = rows;
+  state.headers   = headers;
+  state.features  = features;
+  state.outcomeCol = outcomeCol !== null ? headers[outcomeCol] : null;
+  state.fileName  = fileName;
+  state.modelReady = false;
+  state.dirty     = true;
+
+  // Populate dropdowns
+  const selX = document.getElementById('selX');
+  const selY = document.getElementById('selY');
+  selX.innerHTML = '';
+  selY.innerHTML = '';
+  features.forEach(f => {
+    selX.appendChild(new Option(f, f));
+    selY.appendChild(new Option(f, f));
+  });
+  // Defaults
+  const gIdx = features.findIndex(f => /glucose/i.test(f));
+  const bIdx = features.findIndex(f => /bmi/i.test(f));
+  selX.selectedIndex = gIdx >= 0 ? gIdx : 0;
+  selY.selectedIndex = bIdx >= 0 ? bIdx : (features.length > 1 ? 1 : 0);
+
+  // File info
+  document.getElementById('fileInfo').textContent =
+    `${fileName} · ${rows.length} rows · ${features.length} features`;
+
+  // Show cards
+  ['featuresCard','prepCard','modelCard','legendCard'].forEach(id =>
+    document.getElementById(id).classList.remove('hidden'));
+  document.getElementById('canvasPlaceholder').classList.add('hidden');
+
+  // Enable rebuild
+  document.getElementById('btnRebuild').disabled = false;
+  document.getElementById('btnPredict').disabled  = true;
+
+  setStatus('loaded');
+}
+
+// ─── PREPROCESSING ──────────────────────────────────────────────────────────
+function replaceZeroWithMean(vals) {
+  const nonZero = vals.filter(v => v !== 0);
+  if (!nonZero.length) return vals;
+  const mean = nonZero.reduce((a, b) => a + b, 0) / nonZero.length;
+  return vals.map(v => v === 0 ? mean : v);
+}
+
+function computeParams(vals) {
+  const sorted = [...vals].sort((a, b) => a - b);
+  const n = sorted.length;
+  const mean = vals.reduce((a, b) => a + b, 0) / n;
+  const std  = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / n) || 1;
+  const min  = sorted[0];
+  const max  = sorted[n - 1];
+  const median = n % 2 ? sorted[(n-1)/2] : (sorted[n/2-1]+sorted[n/2])/2;
+  const q1   = sorted[Math.floor(n * 0.25)];
+  const q3   = sorted[Math.floor(n * 0.75)];
+  const iqr  = (q3 - q1) || 1;
+  return { mean, std, min, max: max === min ? max + 1 : max, median, q1, q3, iqr };
+}
+
+function scaleValue(v, params, type) {
+  switch (type) {
+    case 'standard': return (v - params.mean) / params.std;
+    case 'minmax':   return (v - params.min) / (params.max - params.min);
+    case 'robust':   return (v - params.median) / params.iqr;
+    default:         return v;
+  }
+}
+
+// ─── MODEL BUILD ────────────────────────────────────────────────────────────
+function onKChange() {
+  document.getElementById('kValDisplay').textContent =
+    document.getElementById('kSlider').value;
+}
+
+function onFeatureChange() {
+  state.dirty = true;
+  document.getElementById('btnRebuild').disabled = false;
+}
+
+function onPrepChange() {
+  state.dirty = true;
+  document.getElementById('btnRebuild').disabled = false;
+}
+
+function rebuildModel() {
+  if (!state.rawData) return;
+  cancelPrediction();
+
+  const xFeat   = document.getElementById('selX').value;
+  const yFeat   = document.getElementById('selY').value;
+  const repZeroX = document.getElementById('replaceZeroX').checked;
+  const repZeroY = document.getElementById('replaceZeroY').checked;
+  const scalX   = document.getElementById('scalerX').value;
+  const scalY   = document.getElementById('scalerY').value;
+  const k       = parseInt(document.getElementById('kSlider').value);
+
+  const rows = state.rawData;
+  const splitIdx = Math.floor(rows.length * 0.8);
+  const trainRaw = rows.slice(0, splitIdx);
+  const valRaw   = rows.slice(splitIdx);
+
+  // Extract raw feature vals
+  let txTrain = trainRaw.map(r => r[xFeat]);
+  let tyTrain = trainRaw.map(r => r[yFeat]);
+  let txVal   = valRaw.map(r => r[xFeat]);
+  let tyVal   = valRaw.map(r => r[yFeat]);
+
+  // Replace zeros on training data
+  if (repZeroX) { txTrain = replaceZeroWithMean(txTrain); txVal = txVal.map((v, i) => v === 0 ? (computeParams(txTrain).mean) : v); }
+  if (repZeroY) { tyTrain = replaceZeroWithMean(tyTrain); tyVal = tyVal.map((v, i) => v === 0 ? (computeParams(tyTrain).mean) : v); }
+
+  // Recompute after zero-replace
+  const xParams = computeParams(txTrain);
+  const yParams = computeParams(tyTrain);
+  state.xParams = xParams;
+  state.yParams = yParams;
+
+  // Scale
+  const sxTrain = txTrain.map(v => scaleValue(v, xParams, scalX));
+  const syTrain = tyTrain.map(v => scaleValue(v, yParams, scalY));
+  const sxVal   = txVal.map(v => scaleValue(v, xParams, scalX));
+  const syVal   = tyVal.map(v => scaleValue(v, yParams, scalY));
+
+  // Build point arrays
+  const allScaledX = [...sxTrain, ...sxVal];
+  const allScaledY = [...syTrain, ...syVal];
+  const xMin = Math.min(...allScaledX);
+  const xMax = Math.max(...allScaledX);
+  const yMin = Math.min(...allScaledY);
+  const yMax = Math.max(...allScaledY);
+  const xRange = xMax - xMin || 1;
+  const yRange = yMax - yMin || 1;
+  const xPad = xRange * 0.05;
+  const yPad = yRange * 0.05;
+  state.xMin = xMin - xPad; state.xMax = xMax + xPad;
+  state.yMin = yMin - yPad; state.yMax = yMax + yPad;
+
+  const outcome = state.outcomeCol;
+
+  const newTrain = trainRaw.map((r, i) => ({
+    x: sxTrain[i], y: syTrain[i],
+    cls: outcome ? r[outcome] : 0,
+    cx: 0, cy: 0,
+    type: 'train'
+  }));
+  const newVal = valRaw.map((r, i) => ({
+    x: sxVal[i], y: syVal[i],
+    cls: outcome ? r[outcome] : 0,
+    cx: 0, cy: 0,
+    type: 'val'
+  }));
+
+  // Compute canvas coords
+  function toCX(x) {
+    const W = canvas.width;
+    return PAD_L + (x - state.xMin) / (state.xMax - state.xMin) * (W - PAD_L - PAD_R);
+  }
+  function toCY(y) {
+    const H = canvas.height;
+    return H - PAD_B - (y - state.yMin) / (state.yMax - state.yMin) * (H - PAD_T - PAD_B);
+  }
+  newTrain.forEach(p => { p.cx = toCX(p.x); p.cy = toCY(p.y); });
+  newVal.forEach(p => { p.cx = toCX(p.x); p.cy = toCY(p.y); });
+
+  const isFirst = !state.modelReady;
+
+  if (isFirst) {
+    state.trainPts = newTrain;
+    state.valPts   = newVal;
+    state.modelReady = true;
+    state.dirty = false;
+    document.getElementById('btnRebuild').disabled = false;
+    document.getElementById('btnPredict').disabled  = false;
+    drawScene();
+    setStatus('ready');
+    return;
+  }
+
+  // Animate from old → new positions
+  setStatus('building');
+  document.getElementById('btnRebuild').disabled = true;
+  document.getElementById('btnPredict').disabled  = true;
+
+  // Build from array
+  const oldTrain = state.trainPts.map(p => ({ cx: p.cx, cy: p.cy }));
+  const oldVal   = state.valPts.map(p => ({ cx: p.cx, cy: p.cy }));
+
+  // Pad old arrays if lengths differ
+  while (oldTrain.length < newTrain.length) oldTrain.push({ cx: canvas.width/2, cy: canvas.height/2 });
+  while (oldVal.length < newVal.length)     oldVal.push({ cx: canvas.width/2, cy: canvas.height/2 });
+
+  state.animFrom = { train: oldTrain, val: oldVal };
+  state.animTo   = { train: newTrain, val: newVal };
+  state.animStart = null;
+
+  if (state.animRaf) cancelAnimationFrame(state.animRaf);
+
+  function easeInOut(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+  }
+
+  function animFrame(ts) {
+    if (!state.animStart) state.animStart = ts;
+    const elapsed = ts - state.animStart;
+    const t = Math.min(elapsed / state.animDur, 1);
+    const e = easeInOut(t);
+
+    // Interpolate
+    const itrTrain = newTrain.map((pt, i) => {
+      const from = state.animFrom.train[i] || { cx: canvas.width/2, cy: canvas.height/2 };
+      return Object.assign({}, pt, {
+        cx: from.cx + (pt.cx - from.cx) * e,
+        cy: from.cy + (pt.cy - from.cy) * e,
+      });
+    });
+    const itrVal = newVal.map((pt, i) => {
+      const from = state.animFrom.val[i] || { cx: canvas.width/2, cy: canvas.height/2 };
+      return Object.assign({}, pt, {
+        cx: from.cx + (pt.cx - from.cx) * e,
+        cy: from.cy + (pt.cy - from.cy) * e,
+      });
+    });
+
+    state.trainPts = itrTrain;
+    state.valPts   = itrVal;
+    drawScene();
+
+    if (t < 1) {
+      state.animRaf = requestAnimationFrame(animFrame);
+    } else {
+      state.trainPts = newTrain;
+      state.valPts   = newVal;
+      state.modelReady = true;
+      state.dirty = false;
+      document.getElementById('btnRebuild').disabled = false;
+      document.getElementById('btnPredict').disabled  = false;
+      drawScene();
+      setStatus('ready');
+    }
+  }
+
+  state.animRaf = requestAnimationFrame(animFrame);
+}
+
+// ─── DRAWING ─────────────────────────────────────────────────────────────────
+function drawScene() {
+  const W = canvas.width, H = canvas.height;
+  if (!W || !H) return;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!state.modelReady && !state.animRaf) return;
+
+  drawGrid(W, H);
+  drawPoints(W, H);
+}
+
+function drawGrid(W, H) {
+  const { xMin, xMax, yMin, yMax } = state;
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px Segoe UI, system-ui, sans-serif';
+
+  // Vertical grid lines (X axis ticks)
+  const nX = 6;
+  for (let i = 0; i <= nX; i++) {
+    const xVal = xMin + (xMax - xMin) * i / nX;
+    const cx   = PAD_L + (xVal - xMin) / (xMax - xMin) * (W - PAD_L - PAD_R);
+    ctx.beginPath();
+    ctx.moveTo(cx, PAD_T);
+    ctx.lineTo(cx, H - PAD_B);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillText(xVal.toFixed(2), cx, H - PAD_B + 14);
+  }
+
+  // Horizontal grid lines (Y axis ticks)
+  const nY = 5;
+  for (let i = 0; i <= nY; i++) {
+    const yVal = yMin + (yMax - yMin) * i / nY;
+    const cy   = H - PAD_B - (yVal - yMin) / (yMax - yMin) * (H - PAD_T - PAD_B);
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, cy);
+    ctx.lineTo(W - PAD_R, cy);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(yVal.toFixed(2), PAD_L - 5, cy + 3);
+  }
+
+  // Axis border
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(PAD_L, PAD_T, W - PAD_L - PAD_R, H - PAD_T - PAD_B);
+
+  // Axis labels
+  const xFeat = document.getElementById('selX') ? document.getElementById('selX').value : '';
+  const yFeat = document.getElementById('selY') ? document.getElementById('selY').value : '';
+
+  ctx.fillStyle = '#475569';
+  ctx.font = 'bold 11px Segoe UI, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(xFeat, PAD_L + (W - PAD_L - PAD_R) / 2, H - 5);
+
+  ctx.save();
+  ctx.translate(13, PAD_T + (H - PAD_T - PAD_B) / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yFeat, 0, 0);
+  ctx.restore();
+}
+
+function drawPoints(W, H) {
+  const pred = state.pred;
+  const K    = parseInt(document.getElementById('kSlider').value);
+
+  // Determine revealed neighbor set
+  let revealedSet = new Set();
+  let currentIdx  = -1;
+  if (pred) {
+    for (let i = 0; i < pred.step; i++) revealedSet.add(pred.sortedDists[i].origIdx);
+    if (pred.step < pred.sortedDists.length) currentIdx = pred.sortedDists[pred.step - 1]?.origIdx ?? -1;
+  }
+
+  // Draw all-distance lines first (thin, faded)
+  if (pred) {
+    const tp = pred.testPt;
+    ctx.lineWidth = 0.5;
+    state.trainPts.forEach(pt => {
+      ctx.strokeStyle = 'rgba(203,213,225,0.3)';
+      ctx.beginPath();
+      ctx.moveTo(tp.cx, tp.cy);
+      ctx.lineTo(pt.cx, pt.cy);
+      ctx.stroke();
+    });
+
+    // Revealed neighbor lines
+    for (let i = 0; i < pred.step; i++) {
+      const d = pred.sortedDists[i];
+      const pt = state.trainPts[d.origIdx];
+      const isCurrent = (i === pred.step - 1);
+      ctx.strokeStyle = isCurrent ? 'rgba(245,158,11,0.9)' : 'rgba(245,158,11,0.55)';
+      ctx.lineWidth = isCurrent ? 2 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tp.cx, tp.cy);
+      ctx.lineTo(pt.cx, pt.cy);
+      ctx.stroke();
+    }
+  }
+
+  // Training points
+  state.trainPts.forEach((pt, i) => {
+    const isNeighbor = revealedSet.has(i);
+    const isCurrent  = (i === currentIdx);
+    const alpha = isNeighbor ? 0.9 : 0.6;
+    ctx.fillStyle = pt.cls === 0
+      ? `rgba(59,130,246,${alpha})`
+      : `rgba(239,68,68,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(pt.cx, pt.cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Neighbor ring
+    if (isNeighbor) {
+      ctx.strokeStyle = isCurrent ? '#f59e0b' : 'rgba(245,158,11,0.7)';
+      ctx.lineWidth = isCurrent ? 2.5 : 2;
+      ctx.beginPath();
+      ctx.arc(pt.cx, pt.cy, 9, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+
+  // Validation points
+  state.valPts.forEach((pt, i) => {
+    const isTest = pred && (i === pred.valIdx);
+    if (isTest) return; // drawn separately below
+    const alpha = 0.35;
+    ctx.fillStyle = pt.cls === 0
+      ? `rgba(59,130,246,${alpha})`
+      : `rgba(239,68,68,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(pt.cx, pt.cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Test point (amber glow)
+  if (pred) {
+    const tp = pred.testPt;
+    // Glow
+    const grad = ctx.createRadialGradient(tp.cx, tp.cy, 2, tp.cx, tp.cy, 14);
+    grad.addColorStop(0, 'rgba(245,158,11,0.5)');
+    grad.addColorStop(1, 'rgba(245,158,11,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(tp.cx, tp.cy, 14, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(tp.cx, tp.cy, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Segoe UI, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', tp.cx, tp.cy);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+// ─── KNN PREDICTION ─────────────────────────────────────────────────────────
+function cancelPrediction() {
+  if (state.predTimer) { clearInterval(state.predTimer); state.predTimer = null; }
+  state.pred = null;
+  hidePredContent();
+}
+
+function hidePredContent() {
+  document.getElementById('predEmpty').classList.remove('hidden');
+  document.getElementById('votesSection').classList.add('hidden');
+  document.getElementById('distSection').classList.add('hidden');
+}
+
+function nextPrediction() {
+  if (!state.modelReady || state.valPts.length === 0) return;
+  cancelPrediction();
+
+  const K = parseInt(document.getElementById('kSlider').value);
+  const valIdx = Math.floor(Math.random() * state.valPts.length);
+  const testPt = state.valPts[valIdx];
+
+  // Euclidean distances to ALL train pts
+  const dists = state.trainPts.map((pt, i) => ({
+    origIdx: i,
+    dist: Math.sqrt((testPt.x - pt.x) ** 2 + (testPt.y - pt.y) ** 2),
+    cls:  pt.cls
+  }));
+  dists.sort((a, b) => a.dist - b.dist);
+
+  // Build distance table (cap at 100 for DOM)
+  buildDistTable(dists, K, 0);
+
+  // Show prediction UI
+  document.getElementById('predEmpty').classList.add('hidden');
+  document.getElementById('votesSection').classList.remove('hidden');
+  document.getElementById('distSection').classList.remove('hidden');
+
+  // Reset votes
+  document.getElementById('voteCount0').textContent = '0';
+  document.getElementById('voteCount1').textContent = '0';
+  document.getElementById('voteBar0').style.width = '0%';
+  document.getElementById('voteBar1').style.width = '0%';
+  document.getElementById('winnerBadge').classList.add('hidden');
+
+  state.pred = {
+    valIdx,
+    testPt,
+    sortedDists: dists,
+    step: 0,
+    votes: [0, 0],
+    K
+  };
+
+  updateStepInfo(0);
+  setStatus('predicting', 0, K);
+  drawScene();
+
+  let step = 0;
+  state.predTimer = setInterval(() => {
+    step++;
+    const d = dists[step - 1];
+    state.pred.step = step;
+    state.pred.votes[d.cls]++;
+    updateVotes(state.pred.votes, K);
+    updateDistTable(dists, K, step);
+    updateStepInfo(step);
+    setStatus('predicting', step, K);
+    drawScene();
+
+    if (step >= K) {
+      clearInterval(state.predTimer);
+      state.predTimer = null;
+      const winner = state.pred.votes[0] >= state.pred.votes[1] ? 0 : 1;
+      showWinner(winner);
+      setStatus('done', winner);
+    }
+  }, 800);
+}
+
+function updateVotes(votes, K) {
+  document.getElementById('voteCount0').textContent = votes[0];
+  document.getElementById('voteCount1').textContent = votes[1];
+  document.getElementById('voteBar0').style.width = (votes[0] / K * 100) + '%';
+  document.getElementById('voteBar1').style.width = (votes[1] / K * 100) + '%';
+}
+
+function updateStepInfo(step) {
+  const K = state.pred ? state.pred.K : parseInt(document.getElementById('kSlider').value);
+  const el = document.getElementById('stepInfo');
+  if (step === 0) {
+    el.textContent = tx('stepInfo', '—', '—');
+  } else {
+    el.textContent = tx('stepInfo', step, K);
+  }
+}
+
+function showWinner(winner) {
+  const badge = document.getElementById('winnerBadge');
+  badge.className = `c${winner}`;
+  badge.textContent = tx('winnerText', winner);
+  badge.classList.remove('hidden');
+}
+
+// ─── DISTANCE TABLE ──────────────────────────────────────────────────────────
+const MAX_TABLE_ROWS = 100;
+
+function buildDistTable(dists, K, step) {
+  const tbody = document.getElementById('distTbody');
+  const rowsToShow = Math.min(dists.length, MAX_TABLE_ROWS);
+  let html = '';
+  for (let i = 0; i < rowsToShow; i++) {
+    const d = dists[i];
+    const rank = i + 1;
+    const isNeighbor = rank <= K && rank < step;
+    const isCurrent  = rank === step;
+    const cls = d.cls;
+    let rowClass = '';
+    if (isNeighbor) rowClass = `revealed-c${cls}`;
+    if (isCurrent)  rowClass = `revealed-c${cls} current-row`;
+
+    let statusHtml = `<span class="status-badge status-pending">${tx('pending')}</span>`;
+    if (isCurrent) statusHtml = `<span class="status-badge status-current">${tx('current')}</span>`;
+    else if (isNeighbor) statusHtml = `<span class="status-badge status-neighbor">${tx('neighbor')}</span>`;
+
+    html += `<tr class="${rowClass}" id="drow-${i}">
+      <td>${rank}</td>
+      <td>${d.dist.toFixed(4)}</td>
+      <td>${cls}</td>
+      <td>${statusHtml}</td>
+    </tr>`;
+  }
+  if (dists.length > MAX_TABLE_ROWS) {
+    html += `<tr><td colspan="4" style="color:var(--muted);font-size:0.7rem;text-align:center;padding:6px;">
+      … ${dists.length - MAX_TABLE_ROWS} more rows not shown</td></tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function updateDistTable(dists, K, step) {
+  const tbody = document.getElementById('distTbody');
+  const rowsToShow = Math.min(dists.length, MAX_TABLE_ROWS);
+
+  for (let i = 0; i < rowsToShow; i++) {
+    const row = document.getElementById(`drow-${i}`);
+    if (!row) continue;
+    const rank = i + 1;
+    const d = dists[i];
+    const cls = d.cls;
+    const isNeighbor = rank <= K && rank <= step;
+    const isCurrent  = rank === step;
+
+    row.className = '';
+    if (isNeighbor) row.className = `revealed-c${cls}`;
+    if (isCurrent)  row.className = `revealed-c${cls} current-row`;
+
+    const statusCell = row.cells[3];
+    if (isCurrent) {
+      statusCell.innerHTML = `<span class="status-badge status-current">${tx('current')}</span>`;
+    } else if (isNeighbor) {
+      statusCell.innerHTML = `<span class="status-badge status-neighbor">${tx('neighbor')}</span>`;
+    } else {
+      statusCell.innerHTML = `<span class="status-badge status-pending">${tx('pending')}</span>`;
+    }
+  }
+
+  // Auto-scroll to current row
+  const currentRow = document.getElementById(`drow-${step - 1}`);
+  if (currentRow) {
+    currentRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+// ─── STATUS BAR ──────────────────────────────────────────────────────────────
+function setStatus(type, ...args) {
+  const dot  = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  switch (type) {
+    case 'noData':
+      dot.style.background = '#cbd5e1';
+      text.textContent = tx('statusNoData');
+      break;
+    case 'loaded':
+      dot.style.background = '#94a3b8';
+      text.textContent = tx('statusLoaded',
+        state.rawData ? state.rawData.length : 0,
+        state.features ? state.features.length : 0);
+      break;
+    case 'building':
+      dot.style.background = '#f59e0b';
+      text.textContent = tx('statusBuilding');
+      break;
+    case 'ready':
+      dot.style.background = '#22c55e';
+      text.textContent = tx('statusReady', state.trainPts.length, state.valPts.length);
+      break;
+    case 'predicting':
+      dot.style.background = '#6366f1';
+      text.textContent = tx('statusPredicting', args[0], args[1]);
+      break;
+    case 'done':
+      dot.style.background = args[0] === 0 ? '#3b82f6' : '#ef4444';
+      text.textContent = tx('statusDone', args[0]);
+      break;
+  }
+  state._lastStatus = { type, args };
+}
+
+function refreshStatusBar() {
+  if (state._lastStatus) setStatus(state._lastStatus.type, ...state._lastStatus.args);
+}
+</script>
+</body>
+</html>
