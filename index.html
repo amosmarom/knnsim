@@ -576,6 +576,7 @@
       <input type="range" id="kSlider" min="1" max="15" step="2" value="5" oninput="onKChange()">
       <div style="height:10px;"></div>
       <button class="btn btn-primary" id="btnRebuild" disabled onclick="rebuildModel()" data-t="rebuildBtn">Rebuild Model</button>
+      <button class="btn btn-outline" id="btnAdjust" disabled onclick="adjustPresentation()" data-t="adjustBtn">Adjust Presentation</button>
       <button class="btn btn-outline" id="btnPredict" disabled onclick="nextPrediction()" data-t="predictBtn">Next Prediction</button>
     </div>
 
@@ -697,6 +698,7 @@ const T = {
     scalerRob:      'Robust',
     kNeighbors:     'K (neighbors)',
     rebuildBtn:     'Rebuild Model',
+    adjustBtn:      'Adjust Presentation',
     predictBtn:     'Next Prediction',
     class0label:    'Class 0 — No Diabetes',
     class1label:    'Class 1 — Diabetes',
@@ -749,6 +751,7 @@ const T = {
     scalerRob:      'Robust',
     kNeighbors:     'K (שכנים)',
     rebuildBtn:     'בנה מודל מחדש',
+    adjustBtn:      'התאם תצוגה',
     predictBtn:     'חיזוי הבא',
     class0label:    'קבוצה 0 — ללא סוכרת',
     class1label:    'קבוצה 1 — סוכרת',
@@ -839,7 +842,9 @@ const state = {
   valPts:     [],
   xParams:    null,
   yParams:    null,
-  xMin: 0, xMax: 1, yMin: 0, yMax: 1,
+  xMin: 0, xMax: 1, yMin: 0, yMax: 1,      // current data range
+  dispXMin: 0, dispXMax: 1, dispYMin: 0, dispYMax: 1, // display/axis range (locked)
+  axisLocked: false,
   modelReady: false,
   dirty:      false,
   // prediction
@@ -1001,12 +1006,24 @@ function onKChange() {
 
 function onFeatureChange() {
   state.dirty = true;
+  state.axisLocked = false;
   document.getElementById('btnRebuild').disabled = false;
 }
 
 function onPrepChange() {
   state.dirty = true;
   document.getElementById('btnRebuild').disabled = false;
+}
+
+function adjustPresentation() {
+  state.dispXMin = state.xMin; state.dispXMax = state.xMax;
+  state.dispYMin = state.yMin; state.dispYMax = state.yMax;
+  // Recompute cx/cy for all points to match new display range
+  const W = canvas.width, H = canvas.height;
+  const toCX = x => PAD_L + (x - state.dispXMin) / (state.dispXMax - state.dispXMin) * (W - PAD_L - PAD_R);
+  const toCY = y => H - PAD_B - (y - state.dispYMin) / (state.dispYMax - state.dispYMin) * (H - PAD_T - PAD_B);
+  [...state.trainPts, ...state.valPts].forEach(p => { p.cx = toCX(p.x); p.cy = toCY(p.y); });
+  drawScene();
 }
 
 function rebuildModel() {
@@ -1071,16 +1088,23 @@ function rebuildModel() {
   state.xMin = xMin - xPad; state.xMax = xMax + xPad;
   state.yMin = yMin - yPad; state.yMax = yMax + yPad;
 
+  // Lock display range on first build; keep it fixed on subsequent rebuilds
+  if (!state.axisLocked) {
+    state.dispXMin = state.xMin; state.dispXMax = state.xMax;
+    state.dispYMin = state.yMin; state.dispYMax = state.yMax;
+    state.axisLocked = true;
+  }
+
   const outcome = state.outcomeCol;
 
-  // Use actual canvas pixel dimensions (set by resizeCanvas above)
+  // Canvas coords use the LOCKED display range so movement is visible when scaler changes
   function toCX(x) {
     const W = canvas.width;
-    return PAD_L + (x - state.xMin) / (state.xMax - state.xMin) * (W - PAD_L - PAD_R);
+    return PAD_L + (x - state.dispXMin) / (state.dispXMax - state.dispXMin) * (W - PAD_L - PAD_R);
   }
   function toCY(y) {
     const H = canvas.height;
-    return H - PAD_B - (y - state.yMin) / (state.yMax - state.yMin) * (H - PAD_T - PAD_B);
+    return H - PAD_B - (y - state.dispYMin) / (state.dispYMax - state.dispYMin) * (H - PAD_T - PAD_B);
   }
 
   const newTrain = trainRaw.map((r, i) => ({
@@ -1107,6 +1131,7 @@ function rebuildModel() {
     state.dirty = false;
     document.getElementById('btnRebuild').disabled = false;
     document.getElementById('btnPredict').disabled  = false;
+      document.getElementById('btnAdjust').disabled   = false;
     drawScene();
     setStatus('ready');
     return;
@@ -1126,6 +1151,7 @@ function rebuildModel() {
   setStatus('building');
   document.getElementById('btnRebuild').disabled = true;
   document.getElementById('btnPredict').disabled  = true;
+  document.getElementById('btnAdjust').disabled   = true;
 
   state.animFrom = { train: oldTrain, val: oldVal };
   state.animStart = null;
@@ -1172,6 +1198,7 @@ function rebuildModel() {
       state.dirty = false;
       document.getElementById('btnRebuild').disabled = false;
       document.getElementById('btnPredict').disabled  = false;
+      document.getElementById('btnAdjust').disabled   = false;
       drawScene();
       setStatus('ready');
     }
@@ -1197,7 +1224,7 @@ function drawScene() {
 }
 
 function drawGrid(W, H) {
-  const { xMin, xMax, yMin, yMax } = state;
+  const { dispXMin: xMin, dispXMax: xMax, dispYMin: yMin, dispYMax: yMax } = state;
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1;
   ctx.fillStyle = '#94a3b8';
