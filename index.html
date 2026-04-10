@@ -643,6 +643,7 @@
           <div class="vote-bar-bg"><div class="vote-bar c1" id="voteBar1"></div></div>
         </div>
         <div id="winnerBadge" class="hidden"></div>
+        <div id="actualValues" class="hidden" style="font-size:0.7rem;color:var(--muted);margin-top:4px;line-height:1.4;"></div>
         <div id="stepInfo" data-t="stepInfo">Step — of —</div>
       </div>
       <div id="distSection" class="hidden">
@@ -722,6 +723,7 @@ const T = {
     statusPredicting: (s, k) => `Predicting… step ${s} of ${k}`,
     statusDone:     (w) => `Prediction complete — Class ${w} wins`,
     winnerText:     (w) => `✓ Class ${w} wins`,
+    actualValues:   (fx, xVal, fy, yVal, trueClass) => `Actual: ${fx} = ${xVal}, ${fy} = ${yVal} · True class: ${trueClass}`,
     neighbor:       'Neighbor',
     current:        'Current',
     pending:        '—',
@@ -773,6 +775,7 @@ const T = {
     statusPredicting: (s, k) => `מחשב… שלב ${s} מתוך ${k}`,
     statusDone:     (w) => `חיזוי הושלם — קבוצה ${w} מנצחת`,
     winnerText:     (w) => `✓ קבוצה ${w} מנצחת`,
+    actualValues:   (fx, xVal, fy, yVal, trueClass) => `ערכים: ${fx} = ${xVal}, ${fy} = ${yVal} · קבוצה אמיתית: ${trueClass}`,
     neighbor:       'שכן',
     current:        'נוכחי',
     pending:        '—',
@@ -1010,6 +1013,9 @@ function rebuildModel() {
   if (!state.rawData) return;
   cancelPrediction();
 
+  // Ensure canvas has correct pixel dimensions before computing coords
+  resizeCanvas();
+
   const xFeat   = document.getElementById('selX').value;
   const yFeat   = document.getElementById('selY').value;
   const repZeroX = document.getElementById('replaceZeroX').checked;
@@ -1023,7 +1029,13 @@ function rebuildModel() {
   const trainRaw = rows.slice(0, splitIdx);
   const valRaw   = rows.slice(splitIdx);
 
-  // Extract raw feature vals
+  // Store raw (original CSV) feature values before any processing
+  const rawXTrain = trainRaw.map(r => r[xFeat]);
+  const rawYTrain = trainRaw.map(r => r[yFeat]);
+  const rawXVal   = valRaw.map(r => r[xFeat]);
+  const rawYVal   = valRaw.map(r => r[yFeat]);
+
+  // Extract feature vals for processing
   let txTrain = trainRaw.map(r => r[xFeat]);
   let tyTrain = trainRaw.map(r => r[yFeat]);
   let txVal   = valRaw.map(r => r[xFeat]);
@@ -1061,20 +1073,7 @@ function rebuildModel() {
 
   const outcome = state.outcomeCol;
 
-  const newTrain = trainRaw.map((r, i) => ({
-    x: sxTrain[i], y: syTrain[i],
-    cls: outcome ? r[outcome] : 0,
-    cx: 0, cy: 0,
-    type: 'train'
-  }));
-  const newVal = valRaw.map((r, i) => ({
-    x: sxVal[i], y: syVal[i],
-    cls: outcome ? r[outcome] : 0,
-    cx: 0, cy: 0,
-    type: 'val'
-  }));
-
-  // Compute canvas coords
+  // Use actual canvas pixel dimensions (set by resizeCanvas above)
   function toCX(x) {
     const W = canvas.width;
     return PAD_L + (x - state.xMin) / (state.xMax - state.xMin) * (W - PAD_L - PAD_R);
@@ -1083,8 +1082,21 @@ function rebuildModel() {
     const H = canvas.height;
     return H - PAD_B - (y - state.yMin) / (state.yMax - state.yMin) * (H - PAD_T - PAD_B);
   }
-  newTrain.forEach(p => { p.cx = toCX(p.x); p.cy = toCY(p.y); });
-  newVal.forEach(p => { p.cx = toCX(p.x); p.cy = toCY(p.y); });
+
+  const newTrain = trainRaw.map((r, i) => ({
+    x: sxTrain[i], y: syTrain[i],
+    cls: outcome ? r[outcome] : 0,
+    rawX: rawXTrain[i], rawY: rawYTrain[i],
+    cx: toCX(sxTrain[i]), cy: toCY(syTrain[i]),
+    type: 'train'
+  }));
+  const newVal = valRaw.map((r, i) => ({
+    x: sxVal[i], y: syVal[i],
+    cls: outcome ? r[outcome] : 0,
+    rawX: rawXVal[i], rawY: rawYVal[i],
+    cx: toCX(sxVal[i]), cy: toCY(syVal[i]),
+    type: 'val'
+  }));
 
   const isFirst = !state.modelReady;
 
@@ -1100,24 +1112,25 @@ function rebuildModel() {
     return;
   }
 
+  // Snapshot old canvas positions BEFORE overwriting model
+  const oldTrain = state.trainPts.map(p => ({ cx: p.cx, cy: p.cy }));
+  const oldVal   = state.valPts.map(p => ({ cx: p.cx, cy: p.cy }));
+
+  // Pad old arrays if lengths differ (new data points appear from canvas center)
+  const cx0 = canvas.width / 2;
+  const cy0 = canvas.height / 2;
+  while (oldTrain.length < newTrain.length) oldTrain.push({ cx: cx0, cy: cy0 });
+  while (oldVal.length < newVal.length)     oldVal.push({ cx: cx0, cy: cy0 });
+
   // Animate from old → new positions
   setStatus('building');
   document.getElementById('btnRebuild').disabled = true;
   document.getElementById('btnPredict').disabled  = true;
 
-  // Build from array
-  const oldTrain = state.trainPts.map(p => ({ cx: p.cx, cy: p.cy }));
-  const oldVal   = state.valPts.map(p => ({ cx: p.cx, cy: p.cy }));
-
-  // Pad old arrays if lengths differ
-  while (oldTrain.length < newTrain.length) oldTrain.push({ cx: canvas.width/2, cy: canvas.height/2 });
-  while (oldVal.length < newVal.length)     oldVal.push({ cx: canvas.width/2, cy: canvas.height/2 });
-
   state.animFrom = { train: oldTrain, val: oldVal };
-  state.animTo   = { train: newTrain, val: newVal };
   state.animStart = null;
 
-  if (state.animRaf) cancelAnimationFrame(state.animRaf);
+  if (state.animRaf) { cancelAnimationFrame(state.animRaf); state.animRaf = null; }
 
   function easeInOut(t) {
     return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
@@ -1129,16 +1142,16 @@ function rebuildModel() {
     const t = Math.min(elapsed / state.animDur, 1);
     const e = easeInOut(t);
 
-    // Interpolate
+    // Interpolate: build arrays with blended cx/cy but all other fields from newTrain/newVal
     const itrTrain = newTrain.map((pt, i) => {
-      const from = state.animFrom.train[i] || { cx: canvas.width/2, cy: canvas.height/2 };
+      const from = state.animFrom.train[i] || { cx: cx0, cy: cy0 };
       return Object.assign({}, pt, {
         cx: from.cx + (pt.cx - from.cx) * e,
         cy: from.cy + (pt.cy - from.cy) * e,
       });
     });
     const itrVal = newVal.map((pt, i) => {
-      const from = state.animFrom.val[i] || { cx: canvas.width/2, cy: canvas.height/2 };
+      const from = state.animFrom.val[i] || { cx: cx0, cy: cy0 };
       return Object.assign({}, pt, {
         cx: from.cx + (pt.cx - from.cx) * e,
         cy: from.cy + (pt.cy - from.cy) * e,
@@ -1152,6 +1165,7 @@ function rebuildModel() {
     if (t < 1) {
       state.animRaf = requestAnimationFrame(animFrame);
     } else {
+      state.animRaf = null;
       state.trainPts = newTrain;
       state.valPts   = newVal;
       state.modelReady = true;
@@ -1346,6 +1360,8 @@ function hidePredContent() {
   document.getElementById('predEmpty').classList.remove('hidden');
   document.getElementById('votesSection').classList.add('hidden');
   document.getElementById('distSection').classList.add('hidden');
+  document.getElementById('actualValues').classList.add('hidden');
+  document.getElementById('actualValues').textContent = '';
 }
 
 function nextPrediction() {
@@ -1378,6 +1394,11 @@ function nextPrediction() {
   document.getElementById('voteBar0').style.width = '0%';
   document.getElementById('voteBar1').style.width = '0%';
   document.getElementById('winnerBadge').classList.add('hidden');
+  document.getElementById('actualValues').classList.add('hidden');
+  document.getElementById('actualValues').textContent = '';
+
+  const xFeatName = document.getElementById('selX').value;
+  const yFeatName = document.getElementById('selY').value;
 
   state.pred = {
     valIdx,
@@ -1385,7 +1406,9 @@ function nextPrediction() {
     sortedDists: dists,
     step: 0,
     votes: [0, 0],
-    K
+    K,
+    xFeatName,
+    yFeatName,
   };
 
   updateStepInfo(0);
@@ -1436,6 +1459,19 @@ function showWinner(winner) {
   badge.className = `c${winner}`;
   badge.textContent = tx('winnerText', winner);
   badge.classList.remove('hidden');
+
+  // Show actual raw feature values for the test point
+  if (state.pred) {
+    const tp = state.pred.testPt;
+    const fx = state.pred.xFeatName;
+    const fy = state.pred.yFeatName;
+    const xVal = tp.rawX !== undefined ? tp.rawX : '—';
+    const yVal = tp.rawY !== undefined ? tp.rawY : '—';
+    const trueClass = tp.cls;
+    const avEl = document.getElementById('actualValues');
+    avEl.textContent = tx('actualValues', fx, xVal, fy, yVal, trueClass);
+    avEl.classList.remove('hidden');
+  }
 }
 
 // ─── DISTANCE TABLE ──────────────────────────────────────────────────────────
