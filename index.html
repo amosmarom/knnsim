@@ -485,6 +485,28 @@
     padding-bottom: 3px;
     border-bottom: 1px solid var(--border);
   }
+
+  #canvasToolbar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 5px;
+    z-index: 10;
+  }
+  .tool-btn {
+    width: 34px; height: 34px;
+    border-radius: 7px;
+    border: 1.5px solid var(--border);
+    background: rgba(255,255,255,0.92);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  .tool-btn:hover { background: #fff; border-color: var(--primary); }
+  .tool-btn.active { background: var(--primary-light); border-color: var(--primary); }
 </style>
 </head>
 <body>
@@ -603,6 +625,10 @@
         <div class="legend-line" style="background:#f59e0b;"></div>
         <span data-t="kLineLabel">K-neighbor line</span>
       </div>
+      <div class="legend-item">
+        <div style="width:12px;height:12px;background:#8b5cf6;transform:rotate(45deg);flex-shrink:0;"></div>
+        <span id="lblDroppedPoint" data-t="droppedPointLabel">Dropped custom point</span>
+      </div>
     </div>
 
   </div><!-- /sidebar -->
@@ -613,6 +639,10 @@
     <!-- CANVAS WRAP -->
     <div id="canvasWrap">
       <canvas id="scatterCanvas"></canvas>
+      <div id="canvasToolbar">
+        <button id="btnMagnify" class="tool-btn" onclick="toggleMagnify()" title="Magnify">🔍</button>
+        <button id="btnDropMode" class="tool-btn" onclick="toggleDropMode()" title="Drop custom point">📍</button>
+      </div>
       <div id="canvasPlaceholder">
         <div class="ph-emoji">🔵</div>
         <div class="ph-text" data-t="phText">Upload a CSV to begin</div>
@@ -726,6 +756,8 @@ const T = {
     statusDone:     (w) => `Prediction complete — Class ${w} wins`,
     winnerText:     (w) => `✓ Class ${w} wins`,
     actualValues:   (fx, xVal, fy, yVal, trueClass) => `Actual: ${fx} = ${xVal}, ${fy} = ${yVal} · True class: ${trueClass}`,
+    droppedValues:  (fx, xv, fy, yv) => `Dropped point: ${fx} ≈ ${xv}, ${fy} ≈ ${yv}`,
+    droppedPointLabel: 'Dropped custom point',
     neighbor:       'Neighbor',
     current:        'Current',
     pending:        '—',
@@ -779,6 +811,8 @@ const T = {
     statusDone:     (w) => `חיזוי הושלם — קבוצה ${w} מנצחת`,
     winnerText:     (w) => `✓ קבוצה ${w} מנצחת`,
     actualValues:   (fx, xVal, fy, yVal, trueClass) => `ערכים: ${fx} = ${xVal}, ${fy} = ${yVal} · קבוצה אמיתית: ${trueClass}`,
+    droppedValues:  (fx, xv, fy, yv) => `נקודה שנוספה: ${fx} ≈ ${xv}, ${fy} ≈ ${yv}`,
+    droppedPointLabel: 'נקודה שנוספה ידנית',
     neighbor:       'שכן',
     current:        'נוכחי',
     pending:        '—',
@@ -856,6 +890,10 @@ const state = {
   animStart:  null,
   animDur:    5000,
   animRaf:    null,
+  // magnifier / drop mode
+  magMode:    false,
+  magPos:     null,
+  dropMode:   false,
 };
 
 // ─── CANVAS SETUP ───────────────────────────────────────────────────────────
@@ -884,6 +922,10 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('csvInput').addEventListener('change', e => {
     if (e.target.files[0]) loadFile(e.target.files[0]);
   });
+
+  canvas.addEventListener('mousemove', onCanvasMouseMove);
+  canvas.addEventListener('mouseleave', onCanvasMouseLeave);
+  canvas.addEventListener('click', onCanvasClick);
 
   drawScene();
   setStatus('noData');
@@ -996,6 +1038,14 @@ function scaleValue(v, params, type) {
     case 'robust':   return (v - params.median) / params.iqr;
     default:         return v;
   }
+}
+
+function unscaleValue(v, params, type) {
+  if (!params) return v;
+  if (type === 'standard') return v * params.std + params.mean;
+  if (type === 'minmax')   return v * (params.max - params.min) + params.min;
+  if (type === 'robust')   return v * params.iqr + params.median;
+  return v;
 }
 
 // ─── MODEL BUILD ────────────────────────────────────────────────────────────
@@ -1221,14 +1271,20 @@ function drawScene() {
 
   drawGrid(W, H);
   drawPoints(W, H);
+  if (state.magMode && state.magPos) drawMagnifier(W, H);
+}
+
+function fmtTick(v) {
+  if (Number.isInteger(v) || Math.abs(v) >= 100) return v.toFixed(0);
+  if (Math.abs(v) >= 10) return v.toFixed(1);
+  if (Math.abs(v) >= 1) return v.toFixed(1);
+  return v.toFixed(2);
 }
 
 function drawGrid(W, H) {
   const { dispXMin: xMin, dispXMax: xMax, dispYMin: yMin, dispYMax: yMax } = state;
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1;
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = '10px Segoe UI, system-ui, sans-serif';
 
   // Vertical grid lines (X axis ticks)
   const nX = 6;
@@ -1239,8 +1295,15 @@ function drawGrid(W, H) {
     ctx.moveTo(cx, PAD_T);
     ctx.lineTo(cx, H - PAD_B);
     ctx.stroke();
+    // White bg behind X label
+    ctx.font = '11px Segoe UI, system-ui, sans-serif';
+    const label = fmtTick(xVal);
+    const lw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(cx - lw/2 - 3, H - PAD_B + 3, lw + 6, 14);
+    ctx.fillStyle = '#475569';
     ctx.textAlign = 'center';
-    ctx.fillText(xVal.toFixed(2), cx, H - PAD_B + 14);
+    ctx.fillText(label, cx, H - PAD_B + 14);
   }
 
   // Horizontal grid lines (Y axis ticks)
@@ -1252,8 +1315,14 @@ function drawGrid(W, H) {
     ctx.moveTo(PAD_L, cy);
     ctx.lineTo(W - PAD_R, cy);
     ctx.stroke();
+    ctx.font = '11px Segoe UI, system-ui, sans-serif';
+    const label = fmtTick(yVal);
+    const lw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(PAD_L - lw - 11, cy - 9, lw + 8, 14);
+    ctx.fillStyle = '#475569';
     ctx.textAlign = 'right';
-    ctx.fillText(yVal.toFixed(2), PAD_L - 5, cy + 3);
+    ctx.fillText(label, PAD_L - 5, cy + 3);
   }
 
   // Axis border
@@ -1266,7 +1335,7 @@ function drawGrid(W, H) {
   const yFeat = document.getElementById('selY') ? document.getElementById('selY').value : '';
 
   ctx.fillStyle = '#475569';
-  ctx.font = 'bold 11px Segoe UI, system-ui, sans-serif';
+  ctx.font = 'bold 12px Segoe UI, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(xFeat, PAD_L + (W - PAD_L - PAD_R) / 2, H - 5);
 
@@ -1350,8 +1419,8 @@ function drawPoints(W, H) {
     ctx.fill();
   });
 
-  // Test point (amber glow)
-  if (pred) {
+  // Test point (amber glow) — only for validation predictions, not custom drops
+  if (pred && !pred.isCustomDrop) {
     const tp = pred.testPt;
     // Glow
     const grad = ctx.createRadialGradient(tp.cx, tp.cy, 2, tp.cx, tp.cy, 14);
@@ -1374,6 +1443,214 @@ function drawPoints(W, H) {
     ctx.fillText('?', tp.cx, tp.cy);
     ctx.textBaseline = 'alphabetic';
   }
+
+  // Custom dropped point (purple diamond)
+  if (state.pred && state.pred.isCustomDrop) {
+    const tp = state.pred.testPt;
+    const s = 10;
+    ctx.fillStyle = '#8b5cf6';
+    ctx.strokeStyle = '#5b21b6';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(tp.cx, tp.cy - s);
+    ctx.lineTo(tp.cx + s, tp.cy);
+    ctx.lineTo(tp.cx, tp.cy + s);
+    ctx.lineTo(tp.cx - s, tp.cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px Segoe UI, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('+', tp.cx, tp.cy);
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
+// ─── CANVAS TOOL HANDLERS ───────────────────────────────────────────────────
+function onCanvasMouseMove(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  if (state.magMode) {
+    state.magPos = { x, y };
+    drawScene();
+  }
+  if (state.dropMode) {
+    canvas.style.cursor = 'crosshair';
+  }
+}
+
+function onCanvasMouseLeave() {
+  if (state.magMode) {
+    state.magPos = null;
+    drawScene();
+  }
+}
+
+function onCanvasClick(e) {
+  if (!state.dropMode || !state.modelReady) return;
+  const r = canvas.getBoundingClientRect();
+  const cx = e.clientX - r.left, cy = e.clientY - r.top;
+  dropCustomPoint(cx, cy);
+}
+
+function toggleMagnify() {
+  state.magMode = !state.magMode;
+  if (!state.magMode) state.magPos = null;
+  document.getElementById('btnMagnify').classList.toggle('active', state.magMode);
+  if (state.magMode && state.dropMode) {
+    state.dropMode = false;
+    canvas.style.cursor = '';
+    document.getElementById('btnDropMode').classList.remove('active');
+  }
+  drawScene();
+}
+
+function toggleDropMode() {
+  state.dropMode = !state.dropMode;
+  canvas.style.cursor = state.dropMode ? 'crosshair' : '';
+  document.getElementById('btnDropMode').classList.toggle('active', state.dropMode);
+  if (state.dropMode && state.magMode) {
+    state.magMode = false;
+    state.magPos = null;
+    document.getElementById('btnMagnify').classList.remove('active');
+  }
+}
+
+function drawMagnifier(W, H) {
+  if (!state.magPos) return;
+  const { x: mx, y: my } = state.magPos;
+  const ZOOM = 3.5, LENS_R = 90;
+
+  ctx.save();
+  // Lens clip
+  ctx.beginPath();
+  ctx.arc(mx, my, LENS_R, 0, Math.PI * 2);
+  ctx.clip();
+
+  // White fill for lens background
+  ctx.fillStyle = '#f8fafc';
+  ctx.fill();
+
+  // Draw scene content zoomed
+  ctx.translate(mx, my);
+  ctx.scale(ZOOM, ZOOM);
+  ctx.translate(-mx, -my);
+  drawGrid(W, H);
+  drawPoints(W, H);
+  ctx.restore();
+
+  // Lens border
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(mx, my, LENS_R, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Crosshair in lens center
+  ctx.strokeStyle = 'rgba(99,102,241,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(mx - 12, my); ctx.lineTo(mx + 12, my);
+  ctx.moveTo(mx, my - 12); ctx.lineTo(mx, my + 12);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function dropCustomPoint(clickCX, clickCY) {
+  if (state.trainPts.length === 0) return;
+  const W = canvas.width, H = canvas.height;
+  // Invert canvas → scaled data coordinates
+  const sx = state.dispXMin + (clickCX - PAD_L) / (W - PAD_L - PAD_R) * (state.dispXMax - state.dispXMin);
+  const sy = state.dispYMin + (H - PAD_B - clickCY) / (H - PAD_T - PAD_B) * (state.dispYMax - state.dispYMin);
+
+  // Raw (unscaled) values for display
+  const scalX = document.getElementById('scalerX').value;
+  const scalY = document.getElementById('scalerY').value;
+  const rawX = unscaleValue(sx, state.xParams, scalX);
+  const rawY = unscaleValue(sy, state.yParams, scalY);
+
+  const customPt = {
+    x: sx, y: sy,
+    cx: clickCX, cy: clickCY,
+    cls: -1, // unknown
+    rawX: +rawX.toFixed(2), rawY: +rawY.toFixed(2),
+    isCustom: true,
+  };
+
+  cancelPrediction();
+
+  // Run KNN using this custom point
+  const K = parseInt(document.getElementById('kSlider').value);
+  const sortedDists = state.trainPts.map((pt, i) => ({
+    origIdx: i,
+    dist: Math.sqrt((sx - pt.x) ** 2 + (sy - pt.y) ** 2),
+    cls: pt.cls,
+  })).sort((a, b) => a.dist - b.dist);
+
+  state.pred = {
+    testPt: customPt,
+    valIdx: -1,
+    sortedDists,
+    step: 0,
+    votes: { 0: 0, 1: 0 },
+    K,
+    xFeatName: document.getElementById('selX').value,
+    yFeatName: document.getElementById('selY').value,
+    isCustomDrop: true,
+  };
+
+  // Show panel
+  document.getElementById('predEmpty').classList.add('hidden');
+  document.getElementById('votesSection').classList.remove('hidden');
+  document.getElementById('distSection').classList.remove('hidden');
+
+  // Reset votes display
+  document.getElementById('voteCount0').textContent = '0';
+  document.getElementById('voteCount1').textContent = '0';
+  document.getElementById('voteBar0').style.width = '0%';
+  document.getElementById('voteBar1').style.width = '0%';
+  document.getElementById('winnerBadge').classList.add('hidden');
+  document.getElementById('actualValues').classList.add('hidden');
+  document.getElementById('actualValues').textContent = '';
+
+  buildDistTable(sortedDists, K, 0);
+  updateStepInfo(0);
+  setStatus('predicting', 0, K);
+  drawScene();
+
+  // Animate steps
+  let step = 0;
+  state.predTimer = setInterval(() => {
+    step++;
+    state.pred.step = step;
+    const d = sortedDists[step - 1];
+    if (d) {
+      const cls = state.trainPts[d.origIdx].cls;
+      state.pred.votes[cls] = (state.pred.votes[cls] || 0) + 1;
+      updateVotes(state.pred.votes, K);
+      updateDistTable(sortedDists, K, step);
+      updateStepInfo(step);
+    }
+    drawScene();
+    setStatus('predicting', step, K);
+    if (step >= K) {
+      clearInterval(state.predTimer);
+      state.predTimer = null;
+      const votes = state.pred.votes;
+      const winner = (votes[0] || 0) >= (votes[1] || 0) ? 0 : 1;
+      showWinner(winner);
+      // Show dropped point coords
+      const xFeat = document.getElementById('selX').value;
+      const yFeat = document.getElementById('selY').value;
+      const av = document.getElementById('actualValues');
+      av.textContent = tx('droppedValues', xFeat, customPt.rawX, yFeat, customPt.rawY);
+      av.classList.remove('hidden');
+      setStatus('done', winner);
+    }
+  }, 800);
 }
 
 // ─── KNN PREDICTION ─────────────────────────────────────────────────────────
